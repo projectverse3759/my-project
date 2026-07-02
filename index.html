@@ -1195,7 +1195,7 @@ async function loadFiles(userKey) {
         // --- FILE UNLOCK DATABASE (BOTTOM) ---
     // ... your other existing functions (secureDownload, verifyInlineKey, etc.) ...
 
-    async function verifyAccessKey() {
+ async function verifyAccessKey() {
     // 1. Grab the correct input ID
     const userKey = document.getElementById('download-passkey').value.trim();
     const errorMsg = document.getElementById('locker-error-msg');
