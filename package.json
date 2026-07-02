@@ -1,10 +1,11 @@
 {
   "name": "my-backend",
   "version": "1.0.0",
-  "description": "My backend project",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
-  "dependencies": {}
+  "dependencies": {
+    "express": "^4.21.0"
+  }
 }
