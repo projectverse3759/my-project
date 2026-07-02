@@ -1,46 +1,85 @@
-async function verifyAccessKey() {
-    const userKey = document.getElementById('download-passkey').value.trim();
-    const errorMsg = document.getElementById('locker-error-msg');
-    const successMsg = document.getElementById('locker-success-msg');
-    const downloadZone = document.getElementById('protected-download-zone');
+const express = require('express');
+const path = require('path');
+const axios = require('axios');
+require('dotenv').config(); // Ensure you have a .env file for GITHUB_TOKEN
 
-    // Reset state
-    errorMsg.classList.add('hidden');
-    successMsg.classList.add('hidden');
-    downloadZone.innerHTML = '';
+const app = express();
+const PORT = 3000;
 
-    if (!userKey) return;
+app.use(express.json());
+app.use(express.static(__dirname));
 
-    try {
-        const response = await fetch('/api/fetch-files', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ key: userKey })
-        });
-        
-        const result = await response.json();
-        
-        if (result.success) {
-            successMsg.classList.remove('hidden');
-            downloadZone.innerHTML = `
-                <div class="p-3 bg-white rounded-2xl border border-emerald-200 mt-2 shadow-sm">
-                    <a href="/download/${encodeURIComponent(userKey)}" class="flex items-center p-2 hover:bg-slate-50 rounded-xl transition">
-                        <div class="w-10 h-10 rounded-xl flex items-center justify-center bg-blue-50 text-blue-600 border border-blue-100">
-                            <i class="fa-solid fa-cloud-arrow-down"></i>
-                        </div>
-                        <div class="ml-3">
-                            <span class="block text-sm font-bold text-slate-800">${result.data.title || "Download File"}</span>
-                            <span class="block text-[10px] text-slate-500">Click to securely download</span>
-                        </div>
-                    </a>
-                </div>`;
-        } else {
-            errorMsg.classList.remove('hidden');
-        }
-    } catch (error) {
-        console.error("Fetch error:", error);
-        errorMsg.innerText = "Connection error. Please try again.";
-        errorMsg.classList.remove('hidden');
+// --- THE ORGANIZED DATABASE ---
+const FILE_DATABASE = {
+    "KEY_MGT": { 
+        title: "Performance Appraisal System", 
+        filepath: "Performance Appraisal System.docx", 
+        downloadName: "Performance Appraisal System.docx" 
+    },
+    "KEY_MG2": { 
+        title: "PAYROLL Management", 
+        filepath: "PAYROLL Management.docx",
+        downloadName: "PAYROLL Management.docx"     
+    },
+    "KEY_HR1": { 
+        title: "Recruitment & Selection", 
+        filepath: "RECRUITMENT & SELECTION.docx", 
+        downloadName: "RECRUITMENT & SELECTION.docx" 
     }
-}
-</script>
+};
+
+// --- AUTHENTICATION & SECURITY ROUTES ---
+
+// Route for file keys (Downloads)
+app.post('/api/fetch-files', (req, res) => {
+    const { key } = req.body;
+    const fileRecord = FILE_DATABASE[key];
+
+    if (fileRecord) {
+        res.json({ success: true, data: { title: fileRecord.title, filename: fileRecord.downloadName } });
+    } else {
+        res.json({ success: false });
+    }
+});
+
+// --- PRIVATE REPOSITORY DOWNLOAD ROUTE ---
+app.get('/download/:key', async (req, res) => {
+    const key = req.params.key;
+    const fileRecord = FILE_DATABASE[key];
+
+    if (!fileRecord || !fileRecord.filepath) {
+        return res.status(403).send("Invalid download key or file record.");
+    }
+
+    const encodedFilename = encodeURIComponent(fileRecord.filepath);
+    const githubUrl = `https://api.github.com/repos/projectverse3759/projectverse/contents/Project%20Directory/HRM%20Projects/${encodedFilename}`;
+    
+    try {
+        const response = await axios.get(githubUrl, {
+            headers: {
+                'Authorization': `Bearer ${process.env.GITHUB_TOKEN || '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'}`,
+                'Accept': 'application/vnd.github.v3.raw'
+            },
+            responseType: 'stream'
+        });
+
+        res.setHeader('Content-Disposition', `attachment; filename="${fileRecord.downloadName}"`);
+        response.data.pipe(res);
+        
+    } catch (error) {
+        if (error.response) {
+            console.error("GitHub Status:", error.response.status);
+            console.error("GitHub Data:", error.response.data);
+        } else {
+            console.error("Fetch Error:", error.message);
+        }
+        res.status(500).send("Failed to retrieve file.");
+    } 
+}); // <--- THIS CLOSING BRACE IS WHAT WAS MISSING
+
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
+app.listen(PORT, () => {
+    console.log(`Server is running on http://localhost:${PORT}`);
+});
