@@ -57,7 +57,7 @@ app.get('/download/:key', async (req, res) => {
     try {
         const response = await axios.get(githubUrl, {
             headers: {
-                'Authorization': `Bearer ${process.env.GITHUB_TOKEN || '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'}`,
+                'Authorization': `Bearer ${process.env.GITHUB_TOKEN || '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'}`,
                 'Accept': 'application/vnd.github.v3.raw'
             },
             responseType: 'stream'
