@@ -318,6 +318,14 @@
 <body>
 <div id="root"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+// ---------- Supabase setup ----------
+// TODO: paste your real values from Supabase → Project Settings → API
+const SUPABASE_URL = 'https://qrueldouczrqpljthefp.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFydWVsZG91Y3pycXBsanRoZWZwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3NDExMjgsImV4cCI6MjA5OTMxNzEyOH0.wk1i4O8TjCuCy5OK3UI_14cYQi_5jZmLEIIKMMG_blI';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+</script>
 <script>
 // ---------- Data ----------
 const CATEGORIES = [
@@ -327,25 +335,26 @@ const CATEGORIES = [
   {id:'fashion', label:'Fashion', icon:'👕'},
   {id:'home', label:'Home', icon:'🍳'},
   {id:'beauty', label:'Beauty', icon:'🧴'},
+  {id:'fruits_veg', label:'Fruits & Veggies', icon:'🥕'},
+  {id:'foodgrains', label:'Foodgrains & Oil', icon:'🌾'},
+  {id:'spices', label:'Spices & Masala', icon:'🌶️'},
+  {id:'dairy', label:'Dairy & Bakery', icon:'🥛'},
+  {id:'beverages', label:'Beverages', icon:'🧃'},
+  {id:'snacks', label:'Snacks & Foods', icon:'🍪'},
+  {id:'personal_care', label:'Personal Care', icon:'🧴'},
+  {id:'household', label:'Household', icon:'🧹'},
 ];
 
-const PRODUCTS = [
-  {id:'p1', name:'Sona Masoori Rice 5kg', cat:'grocery', icon:'🍚', mrp:349, price:289, rating:4.4, reviews:812},
-  {id:'p2', name:'Toor Dal 1kg', cat:'grocery', icon:'🫘', mrp:149, price:129, rating:4.3, reviews:456},
-  {id:'p3', name:'Groundnut Cooking Oil 1L', cat:'grocery', icon:'🫗', mrp:179, price:159, rating:4.2, reviews:301},
-  {id:'p4', name:'Kadapa Guntur Chilli Powder 200g', cat:'grocery', icon:'🌶️', mrp:99, price:79, rating:4.6, reviews:623},
-  {id:'p5', name:'Budget 4G Smartphone', cat:'electronics', icon:'📱', mrp:8999, price:6499, rating:4.1, reviews:2140},
-  {id:'p6', name:'Wireless Earbuds', cat:'electronics', icon:'🎧', mrp:999, price:499, rating:4.0, reviews:1780},
-  {id:'p7', name:'Power Bank 10000mAh', cat:'electronics', icon:'🔋', mrp:899, price:599, rating:4.3, reviews:940},
-  {id:'p8', name:"Men's Cotton Kurta", cat:'fashion', icon:'👘', mrp:699, price:349, rating:4.2, reviews:512},
-  {id:'p9', name:'Handloom Cotton Saree', cat:'fashion', icon:'🥻', mrp:1199, price:599, rating:4.5, reviews:377},
-  {id:'p10', name:"Kids T-Shirt (Pack of 3)", cat:'fashion', icon:'👕', mrp:599, price:399, rating:4.1, reviews:266},
-  {id:'p11', name:'Non-Stick Tawa 25cm', cat:'home', icon:'🍳', mrp:399, price:249, rating:4.3, reviews:645},
-  {id:'p12', name:'Steel Water Bottle 1L', cat:'home', icon:'🧴', mrp:249, price:149, rating:4.4, reviews:890},
-  {id:'p13', name:'LED Bulb Combo (4 pcs)', cat:'home', icon:'💡', mrp:349, price:199, rating:4.2, reviews:410},
-  {id:'p14', name:'Herbal Face Wash 100ml', cat:'beauty', icon:'🧼', mrp:149, price:99, rating:4.0, reviews:355},
-  {id:'p15', name:'Coconut Hair Oil 200ml', cat:'beauty', icon:'🥥', mrp:120, price:79, rating:4.3, reviews:508},
-];
+// Products now load from Supabase (see loadProducts() below) instead of being hard-coded.
+// Run the SQL from the backend guide once to create + fill the "products" table.
+let PRODUCTS = [];
+
+async function loadProducts(){
+  const { data, error } = await sb.from('products').select('*');
+  if(error){ console.error('loadProducts failed', error); return; }
+  PRODUCTS = data || [];
+  render();
+}
 
 // ---------- State ----------
 let state = {
@@ -361,6 +370,9 @@ let state = {
   lastOrder: null,
   navTab: 'home',
   toast: null,
+  currentUser: null,   // logged-in Supabase user, or null
+  authMode: 'login',   // 'login' or 'signup'
+  priceFilter: 0,       // 0 = no filter, else max price e.g. 100/200/300/400/500
 };
 
 function money(n){ return '₹' + n.toLocaleString('en-IN'); }
@@ -373,24 +385,63 @@ function showToast(msg){
   setTimeout(()=>{ state.toast = null; render(); }, 1800);
 }
 
-// ---------- Storage ----------
+// ---------- Auth ----------
+async function checkSession(){
+  const { data } = await sb.auth.getUser();
+  state.currentUser = data.user || null;
+  if(state.currentUser) await loadPersisted();
+  render();
+}
+
+async function signUp(email, password){
+  const { error } = await sb.auth.signUp({ email, password });
+  if(error){ showToast(error.message); return; }
+  showToast('Account created! Check your email to confirm, then log in.');
+  state.authMode = 'login';
+  render();
+}
+
+async function logIn(email, password){
+  const { error } = await sb.auth.signInWithPassword({ email, password });
+  if(error){ showToast(error.message); return; }
+  await checkSession();
+  showToast('Logged in');
+}
+
+async function logOut(){
+  await sb.auth.signOut();
+  state.currentUser = null;
+  state.addresses = [];
+  state.selectedAddressId = null;
+  render();
+  showToast('Logged out');
+}
+
+// ---------- Storage (addresses, backed by Supabase) ----------
 async function loadPersisted(){
-  try{
-    const res = await window.storage.get('kadapa-addresses', false);
-    if(res && res.value){
-      const data = JSON.parse(res.value);
-      state.addresses = data.addresses || [];
-      state.selectedAddressId = data.selectedAddressId || null;
-    }
-  }catch(e){ /* no saved data yet */ }
+  if(!state.currentUser) return;
+  const { data, error } = await sb.from('addresses').select('*').order('created_at', {ascending:false});
+  if(error){ console.error('loadPersisted failed', error); return; }
+  state.addresses = (data || []).map(a => ({
+    id: a.id, kind: a.kind, name: a.name, phone: a.phone,
+    line1: a.line1, landmark: a.landmark, city: a.city, state: a.state,
+    pincode: a.pincode, lat: a.lat, lng: a.lng
+  }));
   render();
 }
 async function persistAddresses(){
-  try{
-    await window.storage.set('kadapa-addresses', JSON.stringify({
-      addresses: state.addresses, selectedAddressId: state.selectedAddressId
-    }), false);
-  }catch(e){ console.error('storage save failed', e); }
+  if(!state.currentUser){ showToast('Please log in to save an address'); return; }
+  const d = state.addresses[0]; // the newest one just added, in local state
+  const { data, error } = await sb.from('addresses').insert({
+    user_id: state.currentUser.id, kind: d.kind, name: d.name, phone: d.phone,
+    line1: d.line1, landmark: d.landmark, city: d.city, state: d.state,
+    pincode: d.pincode, lat: d.lat, lng: d.lng
+  }).select().single();
+  if(error){ console.error('persistAddresses failed', error); showToast('Could not save address'); return; }
+  // swap the local temp-id address for the real saved one (with DB id)
+  state.addresses[0] = { ...d, id: data.id };
+  state.selectedAddressId = data.id;
+  render();
 }
 
 // ---------- Cart helpers ----------
@@ -489,6 +540,13 @@ function saveDraftAddress(){
 // ---------- Checkout flow ----------
 function openCheckout(){
   if(cartCount()===0) return;
+  if(!state.currentUser){
+    state.drawerOpen = false;
+    state.navTab = 'account';
+    showToast('Please log in to checkout');
+    render();
+    return;
+  }
   state.drawerOpen = false;
   state.checkoutStep = state.addresses.length ? 'address' : 'address';
   if(!state.newAddrDraft && state.addresses.length===0) state.newAddrDraft = null;
@@ -502,13 +560,30 @@ function goReview(){
   render();
 }
 
-function placeOrder(){
+async function placeOrder(){
+  if(!state.currentUser){ showToast('Please log in to place an order'); return; }
   const addr = state.addresses.find(a=>a.id===state.selectedAddressId);
   const lines = cartLines();
+  const orderId = 'KM' + Math.floor(100000 + Math.random()*899999);
+  const sub = cartSubtotal();
+  const fee = deliveryFee();
+
+  const { error: orderErr } = await sb.from('orders').insert({
+    id: orderId, user_id: state.currentUser.id, address: addr,
+    subtotal: sub, delivery: fee, total: sub + fee,
+    payment_status: 'cod', stage: 1
+  });
+  if(orderErr){ console.error('order insert failed', orderErr); showToast('Could not place order'); return; }
+
+  const { error: itemsErr } = await sb.from('order_items').insert(
+    lines.map(l => ({ order_id: orderId, product_id: l.product.id, product_name: l.product.name, qty: l.qty, price: l.product.price }))
+  );
+  if(itemsErr) console.error('order_items insert failed', itemsErr);
+
   const order = {
-    id: 'KM' + Math.floor(100000 + Math.random()*899999),
-    lines, subtotal: cartSubtotal(), mrpTotal: cartMrpTotal(),
-    delivery: deliveryFee(), address: addr,
+    id: orderId,
+    lines, subtotal: sub, mrpTotal: cartMrpTotal(),
+    delivery: fee, address: addr,
     placedAt: new Date(),
     stage: 1, // 1=ordered..4=delivered
   };
@@ -575,8 +650,15 @@ function renderHero(){
       <button class="hero-chip" onclick="window.__setCategory('grocery')">Shop groceries →</button>
     </div>
     <div class="price-chip-row">
-      ${['All','Under ₹100','Under ₹300','Under ₹600','Under ₹1000'].map((c,i)=>`
-        <button class="price-chip ${i===0?'active':''}">${c}</button>
+      ${[
+        {label:'All', value:0},
+        {label:'Under ₹100', value:100},
+        {label:'Under ₹200', value:200},
+        {label:'Under ₹300', value:300},
+        {label:'Under ₹400', value:400},
+        {label:'Under ₹500', value:500},
+      ].map(c=>`
+        <button class="price-chip ${state.priceFilter===c.value?'active':''}" onclick="window.__setPriceFilter(${c.value})">${c.label}</button>
       `).join('')}
     </div>
   `;
@@ -600,7 +682,19 @@ function filteredProducts(){
     const catOk = state.category==='all' || p.cat===state.category;
     const q = state.search.trim().toLowerCase();
     const searchOk = !q || p.name.toLowerCase().includes(q);
-    return catOk && searchOk;
+    const priceOk = !state.priceFilter || p.price <= state.priceFilter;
+    return catOk && searchOk && priceOk;
+  });
+}
+
+// Products for one specific category, honoring search + price filter (used for sectioned home view)
+function productsForCategory(catId){
+  return PRODUCTS.filter(p=>{
+    const catOk = p.cat === catId;
+    const q = state.search.trim().toLowerCase();
+    const searchOk = !q || p.name.toLowerCase().includes(q);
+    const priceOk = !state.priceFilter || p.price <= state.priceFilter;
+    return catOk && searchOk && priceOk;
   });
 }
 
@@ -635,17 +729,39 @@ function renderProductCard(p){
   `;
 }
 
-function renderGrid(){
-  const items = filteredProducts();
+function renderCategorySection(cat){
+  const items = productsForCategory(cat.id);
+  if(items.length === 0) return '';
   return `
     <div class="section-label">
-      <h2>${state.category==='all' ? 'All products' : CATEGORIES.find(c=>c.id===state.category).label}</h2>
+      <h2>${cat.icon} ${cat.label}</h2>
       <span class="sub">${items.length} items</span>
     </div>
     <div class="grid">
-      ${items.length ? items.map(renderProductCard).join('') : `<div style="grid-column:1/-1; text-align:center; padding:30px; color:var(--muted); font-size:13px;">No products match your search.</div>`}
+      ${items.map(renderProductCard).join('')}
     </div>
   `;
+}
+
+function renderGrid(){
+  // When a specific category is selected, show just that one flat grid (existing behavior)
+  if(state.category !== 'all'){
+    const items = filteredProducts();
+    return `
+      <div class="section-label">
+        <h2>${CATEGORIES.find(c=>c.id===state.category).label}</h2>
+        <span class="sub">${items.length} items</span>
+      </div>
+      <div class="grid">
+        ${items.length ? items.map(renderProductCard).join('') : `<div style="grid-column:1/-1; text-align:center; padding:30px; color:var(--muted); font-size:13px;">No products match your search.</div>`}
+      </div>
+    `;
+  }
+
+  // "All" selected: show each category as its own separate section (Fruits & Veggies, Foodgrains, etc.)
+  const sections = CATEGORIES.filter(c => c.id !== 'all').map(renderCategorySection).join('');
+  const hasAny = sections.trim().length > 0;
+  return hasAny ? sections : `<div style="text-align:center; padding:30px; color:var(--muted); font-size:13px;">No products match your search.</div>`;
 }
 
 function renderDrawer(){
@@ -857,7 +973,32 @@ function renderBottomNav(){
 }
 
 function renderAccountTab(){
+  if(!state.currentUser){
+    return `
+      <div class="section-label"><h2>${state.authMode==='login' ? 'Log In' : 'Sign Up'}</h2></div>
+      <div style="padding:0 14px;">
+        <div class="field-label">Email</div>
+        <input class="field-input" id="auth-email" type="email" placeholder="you@example.com"/>
+        <div class="field-label">Password</div>
+        <input class="field-input" id="auth-password" type="password" placeholder="At least 6 characters"/>
+        <button class="primary-btn" style="margin-top:16px;" onclick="window.__submitAuth()">
+          ${state.authMode==='login' ? 'Log In' : 'Create Account'}
+        </button>
+        <button class="ghost-btn" style="margin-top:8px;" onclick="window.__toggleAuthMode()">
+          ${state.authMode==='login' ? "New here? Sign up" : "Already have an account? Log in"}
+        </button>
+      </div>
+    `;
+  }
+
   return `
+    <div class="section-label">
+      <h2>My Account</h2>
+      <span class="sub">${state.currentUser.email}</span>
+    </div>
+    <div style="padding:0 14px 16px;">
+      <button class="secondary-btn" onclick="window.__logOut()">Log Out</button>
+    </div>
     <div class="section-label"><h2>Saved addresses</h2></div>
     <div style="padding:0 14px;">
       ${state.addresses.length===0 ? `<div class="empty-state"><span class="glyph">📍</span>No saved addresses yet.</div>` : state.addresses.map(a=>`
@@ -898,6 +1039,7 @@ window.__openDrawer = ()=>{ state.drawerOpen = true; render(); };
 window.__closeDrawer = ()=>{ state.drawerOpen = false; render(); };
 window.__setSearch = (v)=>{ state.search = v; render(); };
 window.__setCategory = (c)=>{ state.category = c; render(); };
+window.__setPriceFilter = (v)=>{ state.priceFilter = v; render(); };
 window.__addToCart = (id)=>{ addToCart(id); showToast('Added to cart'); };
 window.__incQty = incQty;
 window.__decQty = decQty;
@@ -920,9 +1062,18 @@ window.__navTab = (t)=>{
   render();
 };
 window.__addAddressFromAccount = ()=>{ state.checkoutStep='address'; startManualAddress(); };
+window.__toggleAuthMode = ()=>{ state.authMode = state.authMode==='login' ? 'signup' : 'login'; render(); };
+window.__submitAuth = ()=>{
+  const email = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-password').value;
+  if(!email || !password){ showToast('Enter email and password'); return; }
+  if(state.authMode==='login') logIn(email, password); else signUp(email, password);
+};
+window.__logOut = logOut;
 
 render();
-loadPersisted();
+loadProducts();
+checkSession();
 </script>
 </body>
 </html>
